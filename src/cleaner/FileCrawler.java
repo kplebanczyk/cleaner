@@ -1,69 +1,53 @@
 package cleaner;
 
 import java.io.File;
-import java.io.FileFilter;
-import java.util.Arrays;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.regex.Pattern;
-
-/**
- * Finds all matching files in specified directory
- */
-public class FileCrawler implements Runnable{
-
-    private  File startDir;
-    private static LinkedBlockingQueue<File> searchResult =  new LinkedBlockingQueue();
+import java.util.List;
+import java.util.concurrent.*;
 
 
-    public FileCrawler(final String dir){
-        this.startDir = new File(dir);
-    }
-
-
+public class FileCrawler implements Callable<LinkedBlockingQueue<File>> {
+    private ExecutorService executor;
+    private List<Future<LinkedBlockingQueue<File>>> Jobs = new CopyOnWriteArrayList<Future<LinkedBlockingQueue<File>>>();
+    private LinkedBlockingQueue<File> searchResults = new LinkedBlockingQueue<File>();
+    private volatile int ActiveJobCount = 0;
     @Override
-    public void run() {
-        searchResult.addAll(search(startDir));
-        //System.out.println(FileCrawler.searchResult.size());
-        return;
+    public LinkedBlockingQueue<File> call(){
+       executor = Executors.newCachedThreadPool();
+       Jobs.add(executor.submit(new SearchWorker("D:\\Moje Obrazy\\"))) ;
+       ActiveJobCount++ ;
+
+
+       while (ActiveJobCount>0) {
+           for (Future future : Jobs) {
+               if (future.isDone()) {
+                   LinkedBlockingQueue<File> FutureResults = new LinkedBlockingQueue<File>();
+                   try {
+                       FutureResults.addAll(future.get());
+                   } catch (InterruptedException e) {
+                       e.printStackTrace();
+                   } catch (ExecutionException e) {
+                       e.printStackTrace();
+                   }
+                   for (File diritem : FutureResults) {
+                       if (diritem.isDirectory()) {
+                           Jobs.add(executor.submit(new SearchWorker(diritem.toString())));
+                           FutureResults.remove(diritem);
+                       }
+                   }
+                   searchResults.addAll(FutureResults);
+
+
+               } else {
+                   ActiveJobCount--;
+               }
+           }
+
+       }
+       return searchResults;
     }
 
-    /**
-     *Search for files matching pattern in a given directory, return only files matching condition. Works multithreaded,
-     * spawning new thread for every subdirectory
-     */
-    private LinkedBlockingQueue<File> search(File directory){
-        LinkedBlockingQueue<File> CurrentDirResults = new LinkedBlockingQueue();
-        CurrentDirResults.addAll( Arrays.asList( directory.listFiles() ));
 
-        DirFilter filter = new DirFilter("\\w+[\\.]{1}(DNG|ARW)");//zmienić regex na specyficzny
-        for (File element:CurrentDirResults ) {
-            if (element.isFile() && !filter.accept(element)){
-                CurrentDirResults.remove(element) ;
-            }
-            else if (element.isDirectory()) {
-                CurrentDirResults.remove(element);
-                Thread tt = new Thread(new FileCrawler(element.toString())); // jest wielowątkowy search, ale czy można zrobić kolejkę wyniku jako static ?
-                tt.start();
-            }
-        }
 
-        return CurrentDirResults;
-    }
 
-    /**
-     * compares File elements against regex condition
-     */
-    class DirFilter implements FileFilter {
-        private Pattern pattern;
-
-        public DirFilter(String  regex) {
-            this.pattern = Pattern.compile(regex);
-        }
-
-        @Override
-        public boolean accept(File pathname) {
-            return pattern.matcher(pathname.getName().toString()).matches();
-        }
-    }
 
 }
