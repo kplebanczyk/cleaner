@@ -1,53 +1,65 @@
 package cleaner;
 
 import java.io.File;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.*;
 
 
 public class FileCrawler implements Callable<LinkedBlockingQueue<File>> {
     private ExecutorService executor;
-    private List<Future<LinkedBlockingQueue<File>>> Jobs = new CopyOnWriteArrayList<Future<LinkedBlockingQueue<File>>>();
-    private LinkedBlockingQueue<File> searchResults = new LinkedBlockingQueue<File>();
-    private volatile int ActiveJobCount = 0;
+    private List<Future> Jobs = new CopyOnWriteArrayList<Future>();
+    private LinkedBlockingQueue<File> CumulatedResults = new LinkedBlockingQueue<File>();
+
+    private  int ActiveJobCount = 0;
     @Override
     public LinkedBlockingQueue<File> call(){
        executor = Executors.newCachedThreadPool();
-       Jobs.add(executor.submit(new SearchWorker("D:\\Moje Obrazy\\"))) ;
-       ActiveJobCount++ ;
+       Jobs.add(executor.submit(new SearchWorker("D:\\Moje Obrazy\\2016\\"))) ;
 
 
+        ActiveJobCount=1;
        while (ActiveJobCount>0) {
-           for (Future future : Jobs) {
+           System.out.println("Actve Job counter= "+ActiveJobCount+", Job queue size: "+Jobs.size());
+            for (Future future : Jobs) {
                if (future.isDone()) {
-                   LinkedBlockingQueue<File> FutureResults = new LinkedBlockingQueue<File>();
+                   List<File> JobFindings  = new CopyOnWriteArrayList<File>();
                    try {
-                       FutureResults.addAll(future.get());
+                       JobFindings.addAll((Collection<? extends File>) future.get());
                    } catch (InterruptedException e) {
                        e.printStackTrace();
                    } catch (ExecutionException e) {
                        e.printStackTrace();
                    }
-                   for (File diritem : FutureResults) {
+                   for (File diritem : JobFindings) {
                        if (diritem.isDirectory()) {
+                           JobFindings.remove(diritem);
                            Jobs.add(executor.submit(new SearchWorker(diritem.toString())));
-                           FutureResults.remove(diritem);
+                           ActiveJobCount++ ;
+                           //System.out.println("child "+diritem.toString());
                        }
                    }
-                   searchResults.addAll(FutureResults);
-
-
-               } else {
+                   CumulatedResults.addAll(JobFindings);
+                   Jobs.remove(future);
                    ActiveJobCount--;
+                   System.out.println("Done, JobCount="+ActiveJobCount);
+               } else {
+                   System.out.println("Waiting, JobCount="+ActiveJobCount);
+
                }
            }
-
        }
-       return searchResults;
+       System.out.println("returned result");
+       return CumulatedResults;
     }
 
 
+    public static void main(String[] args) {
+        FileCrawler crawler = new FileCrawler();
+        crawler.call();
+        System.out.println("Finished");
 
+    }
 
 
 }
