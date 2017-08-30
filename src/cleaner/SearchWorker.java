@@ -12,12 +12,12 @@ import java.util.regex.Pattern;
  */
 public class SearchWorker implements Callable<LinkedBlockingQueue<File>> {
 
-    private  File startDir;
-    private static LinkedBlockingQueue<File> searchResult =  new LinkedBlockingQueue();
+    private final File startDir;
+    private LinkedBlockingQueue<File> searchResult =  new LinkedBlockingQueue();
 
 
-    public SearchWorker(final String dir){
-        this.startDir = new File(dir);
+    public SearchWorker(String dir){
+        startDir = new File(dir);
     }
 
 

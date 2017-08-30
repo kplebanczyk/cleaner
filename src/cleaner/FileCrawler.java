@@ -1,6 +1,7 @@
 package cleaner;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.*;
@@ -15,12 +16,11 @@ public class FileCrawler implements Callable<LinkedBlockingQueue<File>> {
     @Override
     public LinkedBlockingQueue<File> call(){
        executor = Executors.newCachedThreadPool();
-       Jobs.add(executor.submit(new SearchWorker("D:\\Moje Obrazy\\2016\\"))) ;
+       Jobs.add(executor.submit(new SearchWorker("D:\\Moje Obrazy\\"))) ;
 
 
         ActiveJobCount=1;
        while (ActiveJobCount>0) {
-           System.out.println("Actve Job counter= "+ActiveJobCount+", Job queue size: "+Jobs.size());
             for (Future future : Jobs) {
                if (future.isDone()) {
                    List<File> JobFindings  = new CopyOnWriteArrayList<File>();
@@ -33,31 +33,28 @@ public class FileCrawler implements Callable<LinkedBlockingQueue<File>> {
                    }
                    for (File diritem : JobFindings) {
                        if (diritem.isDirectory()) {
-                           JobFindings.remove(diritem);
                            Jobs.add(executor.submit(new SearchWorker(diritem.toString())));
                            ActiveJobCount++ ;
                            //System.out.println("child "+diritem.toString());
+                           JobFindings.remove(diritem);
                        }
                    }
                    CumulatedResults.addAll(JobFindings);
                    Jobs.remove(future);
                    ActiveJobCount--;
-                   System.out.println("Done, JobCount="+ActiveJobCount);
-               } else {
-                   System.out.println("Waiting, JobCount="+ActiveJobCount);
-
                }
            }
        }
-       System.out.println("returned result");
+       executor.shutdown();
        return CumulatedResults;
     }
 
 
     public static void main(String[] args) {
         FileCrawler crawler = new FileCrawler();
-        crawler.call();
-        System.out.println("Finished");
+        List<File> output = new ArrayList<File>();
+        output.addAll(crawler.call());
+        System.out.println(output.size());
 
     }
 
