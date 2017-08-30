@@ -8,58 +8,46 @@ import java.util.concurrent.*;
 
 
 public class FileCrawler implements Callable<LinkedBlockingQueue<File>> {
-    private ExecutorService executor;
     private List<Future> Jobs = new CopyOnWriteArrayList<Future>();
     private LinkedBlockingQueue<File> CumulativedResults = new LinkedBlockingQueue<File>();
+    private String start;
 
-
+    public FileCrawler(String whereToStart) {
+        this.start=whereToStart;
+    }
 
     @Override
-    public LinkedBlockingQueue<File> call(){
-       executor = Executors.newCachedThreadPool();
-       Jobs.add(executor.submit(new SearchWorker("D:\\Moje Obrazy\\"))) ;
-       int ActiveJobCount = 1;
+    public LinkedBlockingQueue<File> call() {
+        ExecutorService executor = Executors.newCachedThreadPool();
+        Jobs.add(executor.submit(new SearchWorker(start)));
+        int ActiveJobCount = 1;
+        try {
+            while (ActiveJobCount > 0) {
+                for (Future future : Jobs) {
+                    if (future.isDone()) {
+                        List<File> JobFindings = new CopyOnWriteArrayList<File>();
+                        JobFindings.addAll((Collection<? extends File>) future.get());
 
-       while (ActiveJobCount>0) {
-            for (Future future : Jobs) {
-               if (future.isDone()) {
-                   List<File> JobFindings  = new CopyOnWriteArrayList<File>();
-                   try {
-                       JobFindings.addAll((Collection<? extends File>) future.get());
-                   } catch (InterruptedException e) {
-                       e.printStackTrace();
-                   } catch (ExecutionException e) {
-                       e.printStackTrace();
-                   }
-                   for (File diritem : JobFindings) {
-                       if (diritem.isDirectory()) {
-                           Jobs.add(executor.submit(new SearchWorker(diritem.toString())));
-                           ActiveJobCount++ ;
-                           //System.out.println("child "+diritem.toString());
-                           JobFindings.remove(diritem);
-                       }
-                   }
-                   CumulativedResults.addAll(JobFindings);
-                   Jobs.remove(future);
-                   ActiveJobCount--;
-               }
-           }
-       }
-       executor.shutdown();
-       return CumulativedResults;
+                        for (File diritem : JobFindings) {
+                            if (diritem.isDirectory()) {
+                                Jobs.add(executor.submit(new SearchWorker(diritem.toString())));
+                                ActiveJobCount++;
+                                JobFindings.remove(diritem);
+                            }
+                        }
+                        CumulativedResults.addAll(JobFindings);
+                        Jobs.remove(future);
+                        ActiveJobCount--;
+                    }
+                }
+            }
+            executor.shutdown();
+            executor.awaitTermination(3, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
+        return CumulativedResults;
     }
-
-
-    public static void main(String[] args) {
-        FileCrawler crawler = new FileCrawler();
-        List<File> output = new ArrayList<File>();
-        output.addAll(crawler.call());
-//        System.out.println(output.size());
-//        for (File file:output) {
-//            System.out.println(file.toString());
-//        }
-
-    }
-
-
 }

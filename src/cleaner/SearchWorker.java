@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 public class SearchWorker implements Callable<LinkedBlockingQueue<File>> {
 
     private final File startDir;
-    private LinkedBlockingQueue<File> searchResult =  new LinkedBlockingQueue();
+    private LinkedBlockingQueue<File> searchResult;
 
 
     public SearchWorker(String dir){
@@ -23,6 +23,7 @@ public class SearchWorker implements Callable<LinkedBlockingQueue<File>> {
 
     @Override
     public LinkedBlockingQueue<File> call(){
+        searchResult =  new LinkedBlockingQueue<File>();
         searchResult.addAll(search(startDir));
         return searchResult;
     }
@@ -42,7 +43,6 @@ public class SearchWorker implements Callable<LinkedBlockingQueue<File>> {
                 CurrentDirResults.remove(element) ;
             }
         }
-
         return CurrentDirResults;
     }
 
