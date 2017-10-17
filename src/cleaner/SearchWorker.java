@@ -1,65 +1,47 @@
 package cleaner;
 
 import java.io.File;
-import java.io.FileFilter;
-import java.util.Arrays;
+import java.io.IOException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.regex.Pattern;
+
 
 /**
  * Finds all matching files in specified directory
  */
-public class SearchWorker implements Callable<LinkedBlockingQueue<File>> {
+public class SearchWorker implements Callable<ArrayList<Path>> {
+    private final Path startDir;
+    private ArrayList<Path> searchResult;
 
-    private final File startDir;
-    private LinkedBlockingQueue<File> searchResult;
-
-
-    public SearchWorker(String dir){
-        startDir = new File(dir);
+    public SearchWorker(String dir) {
+        this.startDir = Paths.get(dir);
     }
 
-
     @Override
-    public LinkedBlockingQueue<File> call(){
-        searchResult =  new LinkedBlockingQueue<File>();
-        searchResult.addAll(search(startDir));
+    public ArrayList<Path> call() {
+        search();
         return searchResult;
     }
 
 
-    /**
-     *Search for files matching pattern in a given directory, return only files matching condition. Works multithreaded,
-     * spawning new thread for every subdirectory
-     */
-    private LinkedBlockingQueue<File> search(File directory){
-        LinkedBlockingQueue<File> CurrentDirResults = new LinkedBlockingQueue();
-        CurrentDirResults.addAll( Arrays.asList( directory.listFiles() ));
-
-        DirFilter filter = new DirFilter("\\w+[\\.]{1}(DNG|ARW)");//zmienić regex na specyficzny
-        for (File element:CurrentDirResults ) {
-            if (element.isFile() && !filter.accept(element)){
-                CurrentDirResults.remove(element) ;
+    private void search() {
+         try(DirectoryStream<Path> stream = Files.newDirectoryStream(startDir,"{*.ARW,*.DNG}")){
+            for (Path dir:stream) {
+                searchResult.add(dir);
             }
         }
-        return CurrentDirResults;
-    }
-
-    /**
-     * compares File elements against regex condition
-     */
-    private class DirFilter implements FileFilter {
-        private Pattern pattern;
-
-        public DirFilter(String  regex) {
-            this.pattern = Pattern.compile(regex);
+        catch(IOException e){
+             e.printStackTrace();
         }
 
-        @Override
-        public boolean accept(File pathname) {
-            return pattern.matcher(pathname.getName().toString()).matches();
-        }
     }
+
 
 }
+
