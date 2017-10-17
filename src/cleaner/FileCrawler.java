@@ -1,53 +1,84 @@
 package cleaner;
 
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import org.testng.annotations.Test;
+
+import java.nio.file.Path;
+import java.util.*;
+
+import java.util.function.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 
-public class FileCrawler implements Callable<LinkedBlockingQueue<File>> {
-    private List<Future> Jobs = new CopyOnWriteArrayList<Future>();
-    private LinkedBlockingQueue<File> CumulativedResults = new LinkedBlockingQueue<File>();
-    private String start;
+public class FileCrawler  {
+    private ArrayList<Future> Futures = new ArrayList<>();
+    private ArrayList<Path> CumulativeResults = new ArrayList<>();
+    private String startDir;
 
-    public FileCrawler(String whereToStart) {
-        this.start=whereToStart;
+    public FileCrawler(String startDir) {
+        this.startDir = startDir;
     }
 
-    @Override
-    public LinkedBlockingQueue<File> call() {
-        ExecutorService executor = Executors.newCachedThreadPool();
-        Jobs.add(executor.submit(new SearchWorker(start)));
-        int ActiveJobCount = 1;
-        try {
-            while (ActiveJobCount > 0) {
-                for (Future future : Jobs) {
-                    if (future.isDone()) {
-                        List<File> JobFindings = new CopyOnWriteArrayList<File>();
-                        JobFindings.addAll((Collection<? extends File>) future.get());
 
-                        for (File diritem : JobFindings) {
-                            if (diritem.isDirectory()) {
-                                Jobs.add(executor.submit(new SearchWorker(diritem.toString())));
-                                ActiveJobCount++;
-                                JobFindings.remove(diritem);
+    public List<Path> getRAW() {
+        ExecutorService executor = Executors.newCachedThreadPool();
+
+        //Future<ArrayList<Path>> TopLevelResult = executor.submit(new SearchWorker(startDir));
+
+        Futures.add(executor.submit(new SearchWorker(startDir)));
+
+
+        try {
+
+            while (!Futures.isEmpty()) {
+
+                Map<Boolean, List<Path>> paths =
+                        Futures.stream().
+                        filter(future -> future.isDone()).
+                        filter(future -> !future.isCancelled()).
+                        map(future ->
+                        {
+                            try {
+                                ArrayList<Path> partial = (ArrayList)future.get();
+                                return partial;
                             }
-                        }
-                        CumulativedResults.addAll(JobFindings);
-                        Jobs.remove(future);
-                        ActiveJobCount--;
-                    }
+                            catch (Exception e){
+                                e.printStackTrace();
+                                System.err.println("Future get() method error");
+                                return null;
+                            }
+                        }).
+                        flatMap(Collection::stream).
+                        collect(Collectors.partitioningBy( p->p.toFile().isDirectory()) );
+
+
                 }
-            }
+
+
+                //ArrayList<Path> partialResults
+
+            //use dirs and nondirs
+                //CumulativeResults.addAll(partialResults);
+
+
+            //Futures.remove(future);
+
             executor.shutdown();
-            executor.awaitTermination(3, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } catch (ExecutionException e) {
+            executor.awaitTermination(1, TimeUnit.SECONDS);
+
+        }
+        catch (Exception e){
             e.printStackTrace();
         }
-        return CumulativedResults;
+
+
+        return CumulativeResults;
+    }
+
+    public String getStartDir() {
+        return startDir;
     }
 }
+
+
+
