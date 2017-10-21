@@ -23,27 +23,31 @@ public class FileCrawler  {
 
     public List<Path> getRAW() {
         ExecutorService executor = Executors.newCachedThreadPool();
-
-        //Future<ArrayList<Path>> TopLevelResult = executor.submit(new SearchWorker(startDir));
-
         Futures.add(executor.submit(new SearchWorker(startDir)));
-
-
+        //System.out.println("Futures "+Futures.size());
         try {
-
             while (!Futures.isEmpty()) {
 
-                List<Future<Path>> FeaturesPendingProcessingResuts =
-                        (List)Arrays.asList(
+                ArrayList<Future> FeaturesPendingProcessingResults = new ArrayList();
+
+
+
+                List<Object> FuturesAsObjects=Arrays.asList(
                                 Futures.stream().
                         filter(f -> f.isDone()).
                         filter(f -> !f.isCancelled()).
                         toArray()
                 );
+                FeaturesPendingProcessingResults = List.class.cast(FuturesAsObjects);
 
-                for (Future <Path> future : FeaturesPendingProcessingResuts) {
+                if (FeaturesPendingProcessingResults.size()<1){
+                    continue;
+                }
+                System.out.println("FeaturesPendingProcessingResults.size "+FeaturesPendingProcessingResults.size());
+                for (Future <ArrayList<Path>> future : FeaturesPendingProcessingResults) {
                     try {
-                        ArrayList<Path> futureResult = (ArrayList)future.get();
+                        ArrayList<Path> futureResult =  future.get();
+                        System.out.println("Have results " +futureResult.size());
                         Map<Boolean, List<Path>> PathClassifiedAsDir = futureResult.stream().
                                  collect(Collectors.partitioningBy(
                                          r->r.toFile().isDirectory())
@@ -61,7 +65,8 @@ public class FileCrawler  {
                     }
                     catch (Exception e){
                         e.printStackTrace();
-                        System.err.println("failed to tet partial results");
+                        System.err.println("failed to tet partial results. Future contained: \n" +future.get().toString());
+
                     }
                     Futures.remove(future);
                 }
