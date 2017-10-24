@@ -23,7 +23,7 @@ class HomeImageCollection {
     private int skippedFiles=0;
 
     public HomeImageCollection(Path startDir) {
-        this.crawler = crawler(startDir);
+        this.crawler = new SearchWorker(startDir);
         this.startDir =startDir;
     }
 
@@ -77,9 +77,9 @@ class HomeImageCollection {
 
     }
 
-    private void refactorRAW(Path rawFile){
-        Path parentPath = rawFile.getParent();
-        Matcher OldRawMatcher = Pattern.compile("ARW|DNG").matcher(parentPath);
+    private void refactorRAW(Path originalRaw){
+        Path parentPath = originalRaw.getParent();
+        Matcher OldRawMatcher = Pattern.compile("ARW|DNG").matcher(parentPath.toString());
         log.println("Refactoring " + parentPath);
         Path refactoredPath = Paths.get(OldRawMatcher.replaceAll("RAW"));
         try {
@@ -88,18 +88,18 @@ class HomeImageCollection {
             log.println("Unable to create, directory already exists " + refactoredPath.toString());
         } catch (IOException e) {
             //e.printStackTrace();
-            unableToFix.add(rawFile);
+            unableToFix.add(originalRaw);
             log.println("Unable to create directory "+refactoredPath);
-            continue;
+            return;
         }
 
         try {
-            Files.move(rawFile, refactoredPath.resolve(rawFile.getName()));
-            log.println("Refactoring " + rawFile.toString() + " to " + refactoredPath.resolve(rawFile.getName()).toString());
-            Files.deleteIfExists(java.nio.file.FileSystems.getDefault().getPath(parentPath));
+            Files.move(originalRaw, refactoredPath.resolve(originalRaw));
+            log.println("Refactoring " + originalRaw.toString() + " to " + refactoredPath.resolve(originalRaw).toString());
+            Files.deleteIfExists(parentPath);
         } catch (java.nio.file.DirectoryNotEmptyException e) {
             //log.println("Directory not empty, will try again later: " + parentName);
-            deleteLater.add(parentFolderPath.toFile());
+            deleteLater.add(parentPath);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -142,14 +142,18 @@ class HomeImageCollection {
         log.println("\nDone " + scanResults.size() + " RAW files, skipped "+skippedFiles);
         if (this.unableToFix.size() > 0) {
             log.println("Failed to process " + this.unableToFix.size() + " RAW files");
-            for (File unfixable: this.unableToFix) {
-                log.println("Failed: " + unfixable.getAbsolutePath());
+            for (Path unfixable: this.unableToFix) {
+                log.println("Failed: " + unfixable.toAbsolutePath().toString());
             }
         }
     }
 
     private void startLogging(){
-        String logFileName = new StringBuilder("cleaner_").append( LocalTime.now()).toString();
+        String logFileName = new StringBuilder("cleaner_").
+                append( LocalTime.now()).
+                append(".log").
+                toString();
+
         //Files.exists(Paths.get(startDir.toString(),logFileName));
         try {
             this.log = new PrintWriter(logFileName);
