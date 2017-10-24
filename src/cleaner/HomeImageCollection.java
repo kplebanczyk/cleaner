@@ -1,4 +1,3 @@
-/*
 package cleaner;
 
 import java.io.File;
@@ -7,40 +6,50 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.*;
 import java.text.DateFormat;
+import java.time.LocalTime;
 import java.util.*;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 class HomeImageCollection {
-
-    private FileCrawler crawler;
+    private Path startDir;
+    private SearchWorker crawler;
     private PrintWriter log = null;
-    private Set<File> unfixableDirs = new HashSet<>();
-    private Set<File> deleteLater = new HashSet<>();
-    private LinkedBlockingQueue<Path> rawFiles;
-    private String logFileName = this.crawler.getStartDir()+"changes.log";
+    private Set<Path> unableToFix = new HashSet<>();
+    private Set<Path> deleteLater = new HashSet<>();
+    private List<Path> scanResults;
     private int skippedFiles=0;
-    private Path parentFolderPath ;
-    private String parentPath ;
 
-    public HomeImageCollection(FileCrawler fileCrawler) {
-        this.crawler = fileCrawler;
+    public HomeImageCollection(Path startDir) {
+        this.crawler = crawler(startDir);
+        this.startDir =startDir;
     }
 
-    public Collection<File> fixRawDirectoryStructure() {
+    public Set<Path> fixRawDirectoryStructure() {
 
-        startLogging(logFileName);
+        startLogging();
 
-        rawFiles = crawler.getRAW();
-        for (Path rawFile : rawFiles) {
+        FutureTask<List<Path>> scanTask = new FutureTask<List<Path>>(this.crawler);
+        new Thread(scanTask).start();
+
+
+        try {
+            scanResults = scanTask.get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
+        for (Path rawFile : scanResults) {
             //log.println("Processing " + rawFile.toString());
             if (rawFile.toFile().isDirectory()) {
                 log.println("Skipping, is directory: " + rawFile.toString());
                 continue;
             }
 
-            parentPath = rawFile.getParent();
+            Path parentPath = rawFile.getParent();
             Boolean parentHasNewRAW = Pattern.compile("RAW").matcher(parentPath.toString()).find();
             Matcher OldRawMatcher = Pattern.compile("ARW|DNG").matcher(parentPath.toString());
             Boolean parentHasOldRAW = OldRawMatcher.find();
@@ -61,15 +70,16 @@ class HomeImageCollection {
         log.flush();
         log.close();
 
-        return this.unfixableDirs;
+        return this.unableToFix;
     }
+
     public void mergeJPGs(){
 
     }
 
-
-    private void refactorRAW(File rawF){
-        Matcher OldRawMatcher = Pattern.compile("ARW|DNG").matcher(this.parentPath);
+    private void refactorRAW(Path rawFile){
+        Path parentPath = rawFile.getParent();
+        Matcher OldRawMatcher = Pattern.compile("ARW|DNG").matcher(parentPath);
         log.println("Refactoring " + parentPath);
         Path refactoredPath = Paths.get(OldRawMatcher.replaceAll("RAW"));
         try {
@@ -78,14 +88,14 @@ class HomeImageCollection {
             log.println("Unable to create, directory already exists " + refactoredPath.toString());
         } catch (IOException e) {
             //e.printStackTrace();
-            unfixableDirs.add(rawFile);
+            unableToFix.add(rawFile);
             log.println("Unable to create directory "+refactoredPath);
             continue;
         }
 
         try {
-            Files.move(rawFile.toPath(), refactoredPath.resolve(rawFile.getName()));
-            log.println("Refactoring " + rawFile.toPath().toString() + " to " + refactoredPath.resolve(rawFile.getName()).toString());
+            Files.move(rawFile, refactoredPath.resolve(rawFile.getName()));
+            log.println("Refactoring " + rawFile.toString() + " to " + refactoredPath.resolve(rawFile.getName()).toString());
             Files.deleteIfExists(java.nio.file.FileSystems.getDefault().getPath(parentPath));
         } catch (java.nio.file.DirectoryNotEmptyException e) {
             //log.println("Directory not empty, will try again later: " + parentName);
@@ -95,8 +105,8 @@ class HomeImageCollection {
         }
     }
 
-    private void moveRAWfile(File rawFile){
-        File subfolderNewRAW = new File(parentPath, "RAW");
+    private void moveRAWfile(Path rawFile){
+        File subfolderNewRAW = new File(rawFile.getParent().toString(), "RAW");
         try {
             if (!subfolderNewRAW.exists()) {
                 Files.createDirectory(subfolderNewRAW.toPath());
@@ -106,38 +116,41 @@ class HomeImageCollection {
             log.println("Already exists " +subfolderNewRAW.toString());
         } catch (IOException e) {
             log.println(e.getLocalizedMessage());
-            unfixableDirs.add(rawFile);
+            unableToFix.add(rawFile);
         }
 
-        Path sourcePath = rawFile.toPath();
+        Path sourcePath = rawFile;
         Path destinationPath = subfolderNewRAW.toPath();
         log.println("Moving file " + sourcePath.getFileName() + " to: " + destinationPath.resolve(sourcePath.getFileName()));
         try {
             Files.move(sourcePath, destinationPath.resolve(sourcePath.getFileName()));
         } catch (IOException e) {
             log.println(e.getLocalizedMessage());
-            unfixableDirs.add(rawFile);
+            unableToFix.add(rawFile);
         }
     }
 
     private void deleteDirLater(){
-        for (File emptyDir : this.deleteLater) {
+        for (Path emptyDir : this.deleteLater) {
             try {
-                Files.deleteIfExists(emptyDir.toPath());
+                Files.deleteIfExists(emptyDir);
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
-        this.unfixableDirs.addAll(this.deleteLater);
-        log.println("\nDone " + rawFiles.size() + " RAW files, skipped "+skippedFiles);
-        if (this.unfixableDirs.size() > 0) {
-            log.println("Failed to process " + this.unfixableDirs.size() + " RAW files");
-            for (File unfixable: this.unfixableDirs) {
+        this.unableToFix.addAll(this.deleteLater);
+        log.println("\nDone " + scanResults.size() + " RAW files, skipped "+skippedFiles);
+        if (this.unableToFix.size() > 0) {
+            log.println("Failed to process " + this.unableToFix.size() + " RAW files");
+            for (File unfixable: this.unableToFix) {
                 log.println("Failed: " + unfixable.getAbsolutePath());
             }
         }
     }
-    private void startLogging(String logFileName){
+
+    private void startLogging(){
+        String logFileName = new StringBuilder("cleaner_").append( LocalTime.now()).toString();
+        //Files.exists(Paths.get(startDir.toString(),logFileName));
         try {
             this.log = new PrintWriter(logFileName);
             this.log.println("Started at " + DateFormat.getDateTimeInstance().format(new Date()) +"\n");
@@ -158,4 +171,3 @@ class HomeImageCollection {
 
 
 
-*/

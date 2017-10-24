@@ -5,8 +5,6 @@ import org.testng.annotations.Test;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-
-import java.util.function.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
@@ -22,61 +20,60 @@ public class FileCrawler  {
 
 
     public List<Path> getRAW() {
-        ExecutorService executor = Executors.newCachedThreadPool();
-        Futures.add(executor.submit(new SearchWorker(startDir)));
-        //System.out.println("Futures "+Futures.size());
+
+        FutureTask<List<Path>> firstScanTask = new FutureTask(new SearchWorker(startDir));
+
+        Futures.add(firstScanTask);
+        new Thread(firstScanTask).start();
+        int i=0;
         try {
             while (!Futures.isEmpty()) {
 
-                ArrayList<Future> FeaturesPendingProcessingResults = new ArrayList();
-
-
-
-                List<Object> FuturesAsObjects=Arrays.asList(
-                                Futures.stream().
-                        filter(f -> f.isDone()).
-                        filter(f -> !f.isCancelled()).
-                        toArray()
-                );
-                FeaturesPendingProcessingResults = List.class.cast(FuturesAsObjects);
-
+                List<Future> FeaturesPendingProcessingResults = new ArrayList();
+                for (Future f:Futures) {
+                    if (f.isDone()&& !f.isCancelled()){
+                        FeaturesPendingProcessingResults.add(f);
+                    }
+                }
                 if (FeaturesPendingProcessingResults.size()<1){
                     continue;
                 }
-                System.out.println("FeaturesPendingProcessingResults.size "+FeaturesPendingProcessingResults.size());
-                for (Future <ArrayList<Path>> future : FeaturesPendingProcessingResults) {
+                System.out.println("F "+Futures.size()+" P "+FeaturesPendingProcessingResults.size()+ " i "+ i);
+/////////////////////////////////////////////////////////////////////////
+
+                for (Future future : FeaturesPendingProcessingResults) {
                     try {
-                        ArrayList<Path> futureResult =  future.get();
-                        System.out.println("Have results " +futureResult.size());
+                        List<Path> futureResult = (List<Path>) future.get();
                         Map<Boolean, List<Path>> PathClassifiedAsDir = futureResult.stream().
                                  collect(Collectors.partitioningBy(
                                          r->r.toFile().isDirectory())
                                  );
-                        ArrayList<Path> isDir = new ArrayList<>();
-                                isDir.addAll(PathClassifiedAsDir.get(false));
-                        CumulativeResults.addAll(isDir);
+                        ArrayList<Path> isFile = new ArrayList<>();
+                                isFile.addAll(PathClassifiedAsDir.get(false));
+                        CumulativeResults.addAll(isFile);
 
-                        for (Path d : isDir) {
-                            FutureTask<ArrayList<Path>> nextLevelSearch =
-                                    new FutureTask<ArrayList<Path>>(new SearchWorker(d));
+
+
+                        for (Path d : PathClassifiedAsDir.get(true)) {
+                            System.out.println(d.toString());
+                            FutureTask<List<Path>> nextLevelSearch = new FutureTask (new SearchWorker(d));
                             Futures.add(nextLevelSearch);
+                            new Thread(nextLevelSearch).start();
                         }
-
+                        Futures.remove(future);
                     }
                     catch (Exception e){
                         e.printStackTrace();
                         System.err.println("failed to tet partial results. Future contained: \n" +future.get().toString());
 
                     }
-                    Futures.remove(future);
+
+
                 }
 
-
-
+                FeaturesPendingProcessingResults = null;
 
             } //end of while != empty
-            executor.shutdown();
-            executor.awaitTermination(1, TimeUnit.SECONDS);
         }
         catch (Exception e){
             e.printStackTrace();
